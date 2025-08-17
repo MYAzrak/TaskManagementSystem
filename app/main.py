@@ -11,16 +11,32 @@ from .security import verify_password, create_access_token, decode_access_token
 API_KEY = "123456"  # per spec
 
 
+tags_metadata = [
+    {"name": "health", "description": "Service status checks."},
+    {"name": "auth", "description": "Signup and OAuth2 password login (JWT)."},
+    {
+        "name": "tasks",
+        "description": "User-scoped task CRUD (requires JWT and X-API-Key).",
+    },
+]
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     yield
 
 
-app = FastAPI(title="Todo API", version="0.3.0", lifespan=lifespan)
+app = FastAPI(
+    title="Todo API",
+    version="0.4.0",
+    description="A minimal FastAPI + SQLite Todo service with JWT auth and API key.",
+    openapi_tags=tags_metadata,
+    lifespan=lifespan,
+)
 
 
-@app.get("/health")
+@app.get("/health", tags=["health"], summary="Service health")
 async def health():
     return {"status": "ok"}
 
@@ -29,7 +45,14 @@ async def health():
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 
 
-@app.post("/signup", response_model=schemas.UserOut, status_code=201)
+@app.post(
+    "/signup",
+    response_model=schemas.UserOut,
+    status_code=201,
+    tags=["auth"],
+    summary="Create a new user",
+    response_description="Created user (id, username)",
+)
 async def signup(payload: schemas.UserCreate, db: Session = Depends(get_db)):
     existing = (
         db.query(models.User).filter(models.User.username == payload.username).first()
@@ -42,10 +65,17 @@ async def signup(payload: schemas.UserCreate, db: Session = Depends(get_db)):
     return user
 
 
-@app.post("/token")
+@app.post(
+    "/token",
+    response_model=schemas.TokenOut,
+    tags=["auth"],
+    summary="Login with username/password (OAuth2 Password)",
+    responses={401: {"description": "Invalid credentials"}},
+)
 async def login(
     form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
 ):
+
     user = db.query(models.User).filter(models.User.username == form.username).first()
     if not user or not verify_password(form.password, user.hashed_password):
         raise HTTPException(
@@ -82,7 +112,14 @@ async def get_current_user(
 # Spec: POST /tasks, GET /tasks, GET /tasks/{id}, PUT /tasks/{id}, DELETE /tasks/{id}
 
 
-@app.post("/tasks", response_model=schemas.TaskOut, status_code=201)
+@app.post(
+    "/tasks",
+    response_model=schemas.TaskOut,
+    status_code=201,
+    tags=["tasks"],
+    summary="Create a task (JWT + X-API-Key)",
+    response_description="The created task",
+)
 async def create_task(
     payload: schemas.TaskCreate,
     current_user: models.User = Depends(get_current_user),
@@ -101,7 +138,12 @@ async def create_task(
     return task
 
 
-@app.get("/tasks", response_model=list[schemas.TaskOut])
+@app.get(
+    "/tasks",
+    response_model=list[schemas.TaskOut],
+    tags=["tasks"],
+    summary="List my tasks (JWT + X-API-Key)",
+)
 async def list_tasks(
     current_user: models.User = Depends(get_current_user),
     _: None = Depends(require_api_key),
@@ -111,7 +153,13 @@ async def list_tasks(
     return tasks
 
 
-@app.get("/tasks/{task_id}", response_model=schemas.TaskOut)
+@app.get(
+    "/tasks/{task_id}",
+    response_model=schemas.TaskOut,
+    tags=["tasks"],
+    summary="Get a task by id (JWT + X-API-Key)",
+    responses={404: {"description": "Task not found"}},
+)
 async def get_task(
     task_id: int,
     current_user: models.User = Depends(get_current_user),
@@ -128,7 +176,13 @@ async def get_task(
     return task
 
 
-@app.put("/tasks/{task_id}", response_model=schemas.TaskOut)
+@app.put(
+    "/tasks/{task_id}",
+    response_model=schemas.TaskOut,
+    tags=["tasks"],
+    summary="Update task status (JWT + X-API-Key)",
+    responses={404: {"description": "Task not found"}},
+)
 async def update_task_status(
     task_id: int,
     payload: schemas.TaskStatusUpdate,
@@ -149,7 +203,13 @@ async def update_task_status(
     return task
 
 
-@app.delete("/tasks/{task_id}", status_code=204)
+@app.delete(
+    "/tasks/{task_id}",
+    status_code=204,
+    tags=["tasks"],
+    summary="Delete a task (JWT + X-API-Key)",
+    responses={404: {"description": "Task not found"}},
+)
 async def delete_task(
     task_id: int,
     current_user: models.User = Depends(get_current_user),
