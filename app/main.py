@@ -1,76 +1,61 @@
-"""
-Task Management System - FastAPI Application
-
-This module contains the main FastAPI application that provides a REST API
-for managing tasks and users. The application handles database initialization,
-API endpoints, and lifecycle management.
-
-Key Components:
-- FastAPI application instance with lifespan management
-- Database table creation on startup
-- Health check endpoint for monitoring
-- Automatic database initialization
-
-Dependencies:
-- FastAPI: Web framework for building APIs
-- SQLAlchemy: Database ORM and engine
-- Custom models: User and Task database models
-"""
-
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from .database import Base, engine  # ensures DB engine is ready
-from . import models  # ensure models are imported so tables exist
+from datetime import timedelta
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from sqlalchemy.orm import Session
+from .database import Base, engine, get_db
+from . import models
+from . import schemas
+from .security import verify_password, create_access_token
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """
-    Application lifespan manager that handles startup and shutdown events.
-
-    This function runs once when the application starts up and handles
-    any necessary initialization and cleanup operations.
-
-    Args:
-        app (FastAPI): The FastAPI application instance
-
-    Yields:
-        None: Control is yielded to the application during its runtime
-
-    Note:
-        - Startup: Creates all database tables if they don't exist
-        - Shutdown: Currently no teardown operations needed
-    """
-    # Startup: Create all database tables based on model definitions
-    # This ensures the database schema is ready before handling requests
     Base.metadata.create_all(bind=engine)
-
-    # Yield control to the application during its runtime
     yield
 
-    # Shutdown: Cleanup operations (none needed for now)
-    # Future cleanup operations like closing connections can be added here
 
-
-# Create the FastAPI application instance
-# title: Human-readable name for the API
-# version: API version for tracking changes
-# lifespan: Function to manage application lifecycle
-app = FastAPI(title="Todo API", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="Todo API", version="0.2.0", lifespan=lifespan)
 
 
 @app.get("/health")
 async def health():
-    """
-    Health check endpoint for monitoring application status.
-
-    This endpoint is commonly used by load balancers, monitoring tools,
-    and health check systems to verify the application is running.
-
-    Returns:
-        dict: Simple status response indicating the API is operational
-
-    Example Response:
-        {"status": "ok"}
-    """
     return {"status": "ok"}
+
+
+# ----- Auth -----
+
+
+@app.post("/signup", response_model=schemas.UserOut, status_code=201)
+async def signup(payload: schemas.UserCreate, db: Session = Depends(get_db)):
+    # unique username check
+    existing = (
+        db.query(models.User).filter(models.User.username == payload.username).first()
+    )
+    if existing:
+        raise HTTPException(status_code=400, detail="Username already taken")
+    # create user
+    from .crud import create_user
+
+    user = create_user(db, payload.username, payload.password)
+    return user
+
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
+
+
+@app.post("/token")
+async def login(
+    form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
+):
+    # OAuth2 password flow: username+password form fields
+    user = db.query(models.User).filter(models.User.username == form.username).first()
+    if not user or not verify_password(form.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
+        )
+    # issue JWT
+    access_token = create_access_token(
+        {"sub": str(user.id)}, expires_delta=timedelta(minutes=60)
+    )
+    return {"access_token": access_token, "token_type": "bearer"}
