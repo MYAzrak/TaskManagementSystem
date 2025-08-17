@@ -1,4 +1,5 @@
 # Todo API (FastAPI + SQLite)
+![CI](https://github.com/MYAzrak/TaskManagementSystem/actions/workflows/ci.yml/badge.svg)
 
 Minimal task service for a take-home:
 
