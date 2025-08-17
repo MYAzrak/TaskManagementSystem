@@ -102,12 +102,12 @@ curl https://taskmanagementsystem-v2bw.onrender.com/health
 # signup
 curl -X POST https://taskmanagementsystem-v2bw.onrender.com/signup \
   -H "Content-Type: application/json" \
-  -d "{\"username\":\"alice\",\"password\":\"s3cret\"}"
+  -d "{\"username\":\"mya\",\"password\":\"s3cret\"}"
 
 # token
 curl -X POST https://taskmanagementsystem-v2bw.onrender.com/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=alice&password=s3cret"
+  -d "username=mya&password=s3cret"
 # => {"access_token":"<JWT>","token_type":"bearer"}
 
 # create task (JWT + API key)

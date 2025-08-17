@@ -7,6 +7,7 @@ from sqlalchemy import select
 from .database import Base, engine, get_db
 from . import models, schemas
 from .security import verify_password, create_access_token, decode_access_token
+from typing import Optional
 import os
 
 API_KEY = os.getenv("API_KEY", "123456")  # default matches the spec
@@ -89,8 +90,8 @@ async def login(
 
 
 # ---------- Protected deps ----------
-async def require_api_key(x_api_key: str = Header(..., alias="X-API-Key")):
-    if x_api_key != API_KEY:
+async def require_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-Key")):
+    if not x_api_key or x_api_key != API_KEY:
         raise HTTPException(status_code=401, detail="Invalid or missing API Key")
 
 
