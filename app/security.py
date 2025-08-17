@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from passlib.context import CryptContext
@@ -5,8 +6,8 @@ import jwt  # PyJWT
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# For now, a local dev secret; we’ll move to env later.
-SECRET_KEY = "dev-insecure-change-me"
+# 🔐 read from environment in prod, fallback for local dev
+SECRET_KEY = os.getenv("SECRET_KEY", "dev-insecure-change-me")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 

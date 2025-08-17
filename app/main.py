@@ -7,8 +7,9 @@ from sqlalchemy import select
 from .database import Base, engine, get_db
 from . import models, schemas
 from .security import verify_password, create_access_token, decode_access_token
+import os
 
-API_KEY = "123456"  # per spec
+API_KEY = os.getenv("API_KEY", "123456")  # default matches the spec
 
 
 tags_metadata = [
