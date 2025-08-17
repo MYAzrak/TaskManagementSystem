@@ -1,12 +1,14 @@
 from contextlib import asynccontextmanager
 from datetime import timedelta
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, Depends, HTTPException, status, Header
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 from .database import Base, engine, get_db
-from . import models
-from . import schemas
-from .security import verify_password, create_access_token
+from . import models, schemas
+from .security import verify_password, create_access_token, decode_access_token
+
+API_KEY = "123456"  # per spec
 
 
 @asynccontextmanager
@@ -15,7 +17,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Todo API", version="0.2.0", lifespan=lifespan)
+app = FastAPI(title="Todo API", version="0.3.0", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -23,39 +25,144 @@ async def health():
     return {"status": "ok"}
 
 
-# ----- Auth -----
+# ---------- Auth (from step 2) ----------
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 
 
 @app.post("/signup", response_model=schemas.UserOut, status_code=201)
 async def signup(payload: schemas.UserCreate, db: Session = Depends(get_db)):
-    # unique username check
     existing = (
         db.query(models.User).filter(models.User.username == payload.username).first()
     )
     if existing:
         raise HTTPException(status_code=400, detail="Username already taken")
-    # create user
     from .crud import create_user
 
     user = create_user(db, payload.username, payload.password)
     return user
 
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
-
-
 @app.post("/token")
 async def login(
     form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
 ):
-    # OAuth2 password flow: username+password form fields
     user = db.query(models.User).filter(models.User.username == form.username).first()
     if not user or not verify_password(form.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
         )
-    # issue JWT
-    access_token = create_access_token(
+    token = create_access_token(
         {"sub": str(user.id)}, expires_delta=timedelta(minutes=60)
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {"access_token": token, "token_type": "bearer"}
+
+
+# ---------- Protected deps ----------
+async def require_api_key(x_api_key: str = Header(..., alias="X-API-Key")):
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API Key")
+
+
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+):
+    try:
+        payload = decode_access_token(token)
+        user_id = int(payload.get("sub"))
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user = db.get(models.User, user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    return user
+
+
+# ---------- Task Endpoints (Protected) ----------
+# Spec: POST /tasks, GET /tasks, GET /tasks/{id}, PUT /tasks/{id}, DELETE /tasks/{id}
+
+
+@app.post("/tasks", response_model=schemas.TaskOut, status_code=201)
+async def create_task(
+    payload: schemas.TaskCreate,
+    current_user: models.User = Depends(get_current_user),
+    _: None = Depends(require_api_key),
+    db: Session = Depends(get_db),
+):
+    task = models.Task(
+        user_id=current_user.id,
+        title=payload.title,
+        description=payload.description,
+        # status default = "pending" from model
+    )
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+@app.get("/tasks", response_model=list[schemas.TaskOut])
+async def list_tasks(
+    current_user: models.User = Depends(get_current_user),
+    _: None = Depends(require_api_key),
+    db: Session = Depends(get_db),
+):
+    tasks = db.query(models.Task).filter(models.Task.user_id == current_user.id).all()
+    return tasks
+
+
+@app.get("/tasks/{task_id}", response_model=schemas.TaskOut)
+async def get_task(
+    task_id: int,
+    current_user: models.User = Depends(get_current_user),
+    _: None = Depends(require_api_key),
+    db: Session = Depends(get_db),
+):
+    task = (
+        db.query(models.Task)
+        .filter(models.Task.id == task_id, models.Task.user_id == current_user.id)
+        .first()
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+
+@app.put("/tasks/{task_id}", response_model=schemas.TaskOut)
+async def update_task_status(
+    task_id: int,
+    payload: schemas.TaskStatusUpdate,
+    current_user: models.User = Depends(get_current_user),
+    _: None = Depends(require_api_key),
+    db: Session = Depends(get_db),
+):
+    task = (
+        db.query(models.Task)
+        .filter(models.Task.id == task_id, models.Task.user_id == current_user.id)
+        .first()
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    task.status = payload.status
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+@app.delete("/tasks/{task_id}", status_code=204)
+async def delete_task(
+    task_id: int,
+    current_user: models.User = Depends(get_current_user),
+    _: None = Depends(require_api_key),
+    db: Session = Depends(get_db),
+):
+    task = (
+        db.query(models.Task)
+        .filter(models.Task.id == task_id, models.Task.user_id == current_user.id)
+        .first()
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    db.delete(task)
+    db.commit()
+    return None

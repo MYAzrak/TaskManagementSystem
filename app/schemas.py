@@ -1,10 +1,11 @@
 from pydantic import BaseModel
+from typing import Literal
+from datetime import datetime
 
 
-# --- Auth / User ---
 class UserCreate(BaseModel):
     username: str
-    password: str  # plain text in request; we'll hash it before storing
+    password: str
 
 
 class UserOut(BaseModel):
@@ -12,4 +13,26 @@ class UserOut(BaseModel):
     username: str
 
     class Config:
-        from_attributes = True  # allows returning ORM objects
+        from_attributes = True
+
+
+# --- Task schemas ---
+class TaskCreate(BaseModel):
+    title: str
+    description: str = ""
+
+
+class TaskOut(BaseModel):
+    id: int
+    user_id: int
+    title: str
+    description: str
+    status: Literal["pending", "completed"]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TaskStatusUpdate(BaseModel):
+    status: Literal["pending", "completed"]
