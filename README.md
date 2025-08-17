@@ -7,6 +7,22 @@ Minimal task service for a take-home:
 -   DB: SQLite (file `app.db`)
 -   Tests: `pytest`
 
+## Project layout
+
+```
+├─ app/
+│  ├─ main.py            # app factory + router includes
+│  ├─ models.py          # SQLAlchemy ORM models
+│  ├─ database.py        # engine/session & get_db
+│  ├─ schemas.py         # Pydantic models
+│  ├─ security.py        # hashing + JWT helpers
+│  ├─ deps.py            # common FastAPI dependencies (auth, API key)
+│  └─ routers/
+│     ├─ auth.py         # /signup, /token
+│     └─ tasks.py        # /tasks endpoints
+└─ tests/                # pytest suite
+```
+
 ## Quickstart (Windows)
 
 ```powershell
@@ -74,7 +90,7 @@ pytest -q
 
 Live URL: https://taskmanagementsystem-v2bw.onrender.com/
 
-This app is deploy-ready on Render’s Free plan.
+This app is deploy-ready on Render's Free plan.
 
 **Service settings**
 
@@ -88,7 +104,7 @@ This app is deploy-ready on Render’s Free plan.
 
 **Notes**
 
--   Free instances sleep after inactivity → first request may be slow (“cold start”).
+-   Free instances sleep after inactivity → first request may be slow ("cold start").
 -   SQLite is ephemeral on Free plan → the database can reset on redeploy/restart/sleep.
 -   Docs are at `/docs`. Auth uses OAuth2 Password (get a JWT from `/token`) and
     all task routes also require `X-API-Key: 123456`.
